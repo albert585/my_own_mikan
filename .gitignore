@@ -3,3 +3,4 @@ disk.img
 *.d
 *.elf
 mnt
+*.o
