@@ -1,4 +1,15 @@
-#include <stdint.h>
+#include <stddef.h>
+#include <stdio.h>
+#include "font.hpp"
+#include "frame_buffer_config.hpp"
+#include "graphics.hpp"
+void* operator new(size_t size, void* buf) noexcept { return buf; }
+void* operator new[](size_t size, void* buf) noexcept { return buf; }
+void operator delete(void*) noexcept {}
+void operator delete[](void*) noexcept {}
+void operator delete(void*, size_t) noexcept {}
+void operator delete[](void*, size_t) noexcept {}
+
 
 static inline void outb(uint16_t port, uint8_t val) {
     __asm__ volatile("outb %0, %1" : : "a"(val), "Nd"(port));
@@ -28,18 +39,6 @@ static void serial_write(const char* s) {
     while (*s) serial_putc(*s++);
 }
 
-enum PixelFormat {
-  kPixelRGBResv8BitPerColor,
-  kPixelBGRResv8BitPerColor,
-};
-
-struct FrameBufferConfig {
-  uint8_t* frame_buffer;
-  uint32_t pixels_per_scan_line;
-  uint32_t horizontal_resolution;
-  uint32_t vertical_resolution;
-  enum PixelFormat pixel_format;
-};
 
 extern "C" void KernelMain(
     const FrameBufferConfig* config,
@@ -50,25 +49,37 @@ extern "C" void KernelMain(
 {
     serial_init();
     serial_write("Hello from my kernel!\n");
-
+    switch (config->pixel_format){
+        case kPixelBGRResv8BitPerColor:
+            pixel_writer = new(pixel_writer_buff)
+                BGRResv8bitPerColorPixelWriter{*config};
+            break;
+        case kPixelRGBResv8BitPerColor:
+            pixel_writer = new(pixel_writer_buff)
+                RGBResv8bitPerColorPixelWriter{*config};
+            break;
+    }
     uint8_t* fb = config->frame_buffer;
     for (uint32_t y = 0; y < config->vertical_resolution; ++y) {
         for (uint32_t x = 0; x < config->horizontal_resolution; ++x) {
-            uint32_t offset = (y * config->pixels_per_scan_line + x) * 4;
-            fb[offset + 0] = x * 255 / config->horizontal_resolution;   // B
-            fb[offset + 1] = y * 255 / config->vertical_resolution;     // G
-            fb[offset + 2] = 0;                                       // R
-            fb[offset + 3] = 0;                                        // Reserved
+            pixel_writer->Write(x,y,{0,0,0});// Reserved
         }
     }
-    for (uint32_t y = 200; y < config->vertical_resolution; ++y) {
-        for (uint32_t x = 100; x < 200; ++x) {
-            uint32_t offset = (y * config->pixels_per_scan_line + x) * 4;
-            fb[offset + 0] = x ;   // B
-            fb[offset + 1] = y;     // G
-            fb[offset + 2] = 0;                                       // R
-            fb[offset + 3] = 0;                                        // Reserved
-        }
-    }
+    int i=0;
+    for(char c='!'; c <='~';++c,++i){WriteAscii(*pixel_writer,i*8,100,c,{255,255,255});}
+    //WriteAscii(*pixel_writer,100,100,'A',{255,255,255});
+
+    // for (uint32_t y = 200; y < config->vertical_resolution; ++y) {
+    //     for (uint32_t x = 100; x < 200; ++x) {
+    //         uint32_t offset = (y * config->pixels_per_scan_line + x) * 4;
+    //         fb[offset + 0] = x ;   // B
+    //         fb[offset + 1] = y;     // G
+    //         fb[offset + 2] = 0;                                       // R
+    //         fb[offset + 3] = 0;                                        // Reserved
+    //     }
+    // }
+    char buf[128];
+    sprintf(buf,"1+2=%d",1+2);
+    WriteString(*pixel_writer,0,82,buf,{255,255,255});
     while (1) __asm__("hlt");
 }

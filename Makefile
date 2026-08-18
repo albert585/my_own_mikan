@@ -1,21 +1,39 @@
-CXX      := clang++
-CXXFLAGS := -O2 -Wall -Wextra -g --target=x86_64-elf -ffreestanding \
-            -mno-red-zone -fno-exceptions -fno-rtti -std=c++17
-LD       := ld.lld
-LDFLAGS  := --entry KernelMain -z norelro --image-base 0x100000 --static
+TARGET = kernel.elf
+OBJS = main.o graphics.o font.o hankaku.o newlib_support.o
+DEPENDS = $(join $(dir $(OBJS)),$(addprefix .,$(notdir $(OBJS:.o=.d))))
 
-TARGET := kernel.elf
-OBJS   := main.o
+CPPFLAGS += -O2 -Wall -g --target=x86_64-elf -ffreestanding -mno-red-zone \
+            -fno-exceptions -fno-rtti -std=c++17
+LDFLAGS  += --entry KernelMain -z norelro --image-base 0x100000 --static
+LDLIBS   += -lc
 
-.PHONY: all clean
 
+.PHONY: all
 all: $(TARGET)
 
-$(TARGET): $(OBJS)
-	$(LD) $(LDFLAGS) -o $@ $^
-
-%.o: %.cpp
-	$(CXX) $(CXXFLAGS) -c $< -o $@
-
+.PHONY: clean
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -rf *.o
+
+kernel.elf: $(OBJS) Makefile
+	ld.lld $(LDFLAGS) -o kernel.elf $(OBJS) $(LDLIBS)
+
+%.o: %.cpp Makefile
+	clang++ $(CPPFLAGS) $(CXXFLAGS) -c $<
+
+%.o: %.c Makefile
+	clang $(filter-out -std=c++17,$(CPPFLAGS)) $(CFLAGS) -c $<
+
+hankaku.o: hankaku.bin Makefile
+	objcopy -I binary -O elf64-x86-64 -B i386:x86-64 $< $@
+
+.%.d: %.cpp
+	clang++ $(CPPFLAGS) $(CXXFLAGS) -MM $< > $@
+	$(eval OBJ = $(<:.cpp=.o))
+	sed --in-place 's|$(notdir $(OBJ))|$(OBJ)|' $@
+
+.PHONY: depends
+depends:
+	$(MAKE) $(DEPENDS)
+
+-include $(DEPENDS)
